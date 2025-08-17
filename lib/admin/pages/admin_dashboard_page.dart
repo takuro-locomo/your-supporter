@@ -1,9 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:your_supporter/admin/pages/exercise_manager_page.dart';
-import 'package:your_supporter/admin/pages/patient_editor_page.dart';
-import 'package:your_supporter/app_common/services.dart';
+import 'exercise_manager_page.dart';
+import 'patient_editor_page.dart';
+import '../../app_common/services.dart';
 
 class AdminDashboardPage extends StatelessWidget {
   const AdminDashboardPage({super.key});

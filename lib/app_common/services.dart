@@ -1,4 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'models.dart';
 
 final _db = FirebaseFirestore.instance;
@@ -71,5 +73,35 @@ class FeedbackService {
       'satisfaction': satisfaction,
       'ts': FieldValue.serverTimestamp(),
     });
+  }
+}
+
+class AdminService {
+  static final _functions = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
+
+  /// 招待コードで管理者権限に昇格
+  static Future<bool> elevateToAdmin(String inviteCode) async {
+    try {
+      final result = await _functions.httpsCallable('elevateToAdmin').call({
+        'code': inviteCode,
+      });
+      
+      // トークンを更新してCustom Claimsを反映
+      await FirebaseAuth.instance.currentUser?.getIdToken(true);
+      
+      return result.data['ok'] == true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  /// ユーザー初期化（サインアップ後に呼び出し）
+  static Future<bool> createUserDoc() async {
+    try {
+      final result = await _functions.httpsCallable('createUserDoc').call();
+      return result.data['ok'] == true;
+    } catch (e) {
+      return false;
+    }
   }
 }

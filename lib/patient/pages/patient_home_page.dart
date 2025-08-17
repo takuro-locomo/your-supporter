@@ -1,7 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:your_supporter/app_common/services.dart';
-import 'package:your_supporter/app_common/models.dart';
+import '../../app_common/services.dart';
+import '../../app_common/models.dart';
 import 'exercise_detail_page.dart';
 import 'weekly_feedback_page.dart';
 
