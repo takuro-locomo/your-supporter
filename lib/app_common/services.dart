@@ -23,20 +23,34 @@ class UserService {
   static Stream<QuerySnapshot<Map<String, dynamic>>> streamPatients() {
     return _db.collection('users').where('role', isEqualTo: 'patient').snapshots();
   }
+
+  // 患者自身のプロフィール更新（氏名・生年月日のみ）
+  static Future<void> updateMyProfile(String uid, {required String name, required String birthDate}) {
+    return _db.collection('users').doc(uid).set({
+      'name': name,
+      'birthDate': birthDate,
+    }, SetOptions(merge: true));
+  }
+
+  // 管理者が手術情報を更新
+  static Future<void> updateSurgeryByAdmin(String userId, {
+    String? surgeryDate,
+    String? surgeryApproach,
+    String? surgerySide,
+  }) {
+    return _db.collection('users').doc(userId).set({
+      if (surgeryDate != null) 'surgeryDate': surgeryDate,
+      if (surgeryApproach != null) 'surgeryApproach': surgeryApproach,
+      if (surgerySide != null) 'surgerySide': surgerySide,
+    }, SetOptions(merge: true));
+  }
 }
 
 class ExerciseService {
-  static Stream<List<Exercise>> streamExercises() {
-    return _db.collection('exercises').snapshots().map((qs) =>
-      qs.docs.map((d) => Exercise.fromMap(d.id, d.data())).toList());
-  }
+  static Stream<List<Exercise>> streamExercises() => _db.collection('exercises')
+      .snapshots().map((qs) => qs.docs.map((d) => Exercise.fromMap(d.id, d.data())).toList());
 
-  static Future<void> addOrUpdateExercise({
-    String? id,
-    required String title,
-    required String description,
-    required String videoUrl,
-  }) async {
+  static Future<void> addOrUpdateExercise({String? id, required String title, required String description, required String videoUrl}) async {
     final col = _db.collection('exercises');
     if (id == null) {
       await col.add({'title': title, 'description': description, 'videoUrl': videoUrl});
@@ -47,32 +61,16 @@ class ExerciseService {
 }
 
 class ProgressService {
-  static Future<void> addProgress({
-    required String userId,
-    required String exerciseId,
-    required int count,
-  }) {
+  static Future<void> addProgress({required String userId, required String exerciseId, required int count}) {
     final col = _db.collection('users').doc(userId).collection('progress_records');
-    return col.add({
-      'exerciseId': exerciseId,
-      'count': count,
-      'ts': FieldValue.serverTimestamp(),
-    });
+    return col.add({'exerciseId': exerciseId, 'count': count, 'ts': FieldValue.serverTimestamp()});
   }
 }
 
 class FeedbackService {
-  static Future<void> addWeeklyFeedback({
-    required String userId,
-    required int pain,         // 0-10
-    required int satisfaction, // 0-10
-  }) {
+  static Future<void> addWeeklyFeedback({required String userId, required int pain, required int satisfaction}) {
     final col = _db.collection('users').doc(userId).collection('weekly_feedback');
-    return col.add({
-      'pain': pain,
-      'satisfaction': satisfaction,
-      'ts': FieldValue.serverTimestamp(),
-    });
+    return col.add({'pain': pain, 'satisfaction': satisfaction, 'ts': FieldValue.serverTimestamp()});
   }
 }
 

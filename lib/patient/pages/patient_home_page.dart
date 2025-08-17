@@ -4,9 +4,31 @@ import '../../app_common/services.dart';
 import '../../app_common/models.dart';
 import 'exercise_detail_page.dart';
 import 'weekly_feedback_page.dart';
+import 'profile_setup_page.dart';
 
-class PatientHomePage extends StatelessWidget {
+class PatientHomePage extends StatefulWidget {
   const PatientHomePage({super.key});
+  @override
+  State<PatientHomePage> createState() => _PatientHomePageState();
+}
+
+class _PatientHomePageState extends State<PatientHomePage> {
+  @override
+  void initState() {
+    super.initState();
+    _ensureProfile();
+  }
+
+  Future<void> _ensureProfile() async {
+    final uid = FirebaseAuth.instance.currentUser!.uid;
+    final u = await UserService.fetch(uid);
+    if (!mounted) return;
+    // 氏名 or 生年月日が未登録ならプロフィール登録画面へ
+    if (u == null || (u.name.isEmpty || (u.birthDate == null || u.birthDate!.isEmpty))) {
+      await Navigator.push(context, MaterialPageRoute(builder: (_) => const ProfileSetupPage()));
+      setState(() {}); // 戻ってきたら再描画
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

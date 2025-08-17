@@ -61,7 +61,12 @@ class _PatientsPane extends StatelessWidget {
                   final d = docs[i].data();
                   return ListTile(
                     title: Text(d['name'] ?? '(氏名未設定)'),
-                    subtitle: Text('手術日: ${d['surgeryDate'] ?? '-'} / email: ${d['email'] ?? '-'}'),
+                    subtitle: Text([
+                      '生年月日: ${d['birthDate'] ?? '-'}',
+                      '手術日: ${d['surgeryDate'] ?? '-'}',
+                      'アプローチ: ${d['surgeryApproach'] ?? '-'}',
+                      '左右: ${d['surgerySide'] ?? '-'}',
+                    ].join(' / ')),
                     onTap: () {
                       showDialog(context: context, builder: (_) => PatientEditorPage(userId: docs[i].id, initial: d));
                     },

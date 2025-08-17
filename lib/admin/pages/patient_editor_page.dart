@@ -1,5 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import '../../app_common/services.dart';
 
 class PatientEditorPage extends StatefulWidget {
   final String? userId;
@@ -13,7 +14,10 @@ class PatientEditorPage extends StatefulWidget {
 class _PatientEditorPageState extends State<PatientEditorPage> {
   final _name = TextEditingController();
   final _email = TextEditingController();
+  final _birthDate = TextEditingController();
   final _surgeryDate = TextEditingController();
+  String _surgeryApproach = '未設定';
+  String _surgerySide = '未設定';
   String _role = 'patient';
   bool _busy = false;
 
@@ -23,7 +27,10 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
     final m = widget.initial ?? {};
     _name.text = m['name'] ?? '';
     _email.text = m['email'] ?? '';
+    _birthDate.text = (m['birthDate'] ?? '');
     _surgeryDate.text = (m['surgeryDate'] ?? '');
+    _surgeryApproach = (m['surgeryApproach'] ?? '未設定');
+    _surgerySide = (m['surgerySide'] ?? '未設定');
     _role = m['role'] ?? 'patient';
   }
 
@@ -32,31 +39,62 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
     return AlertDialog(
       title: Text(widget.userId == null ? '患者情報（新規/編集）' : '患者情報編集'),
       content: SizedBox(
-        width: 420,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(controller: _name, decoration: const InputDecoration(labelText: '氏名')),
-            TextField(controller: _email, decoration: const InputDecoration(labelText: 'メール')),
-            TextField(controller: _surgeryDate, decoration: const InputDecoration(labelText: '手術日 (YYYY-MM-DD)')),
-            const SizedBox(height: 8),
-            DropdownButtonFormField<String>(
-              value: _role,
-              items: const [
-                DropdownMenuItem(value: 'patient', child: Text('患者')),
-                DropdownMenuItem(value: 'admin', child: Text('管理者')),
-              ],
-              onChanged: (v) => setState(() => _role = v ?? 'patient'),
-              decoration: const InputDecoration(labelText: 'ロール'),
-            ),
-          ],
+        width: 460,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(controller: _name, decoration: const InputDecoration(labelText: '氏名')),
+              TextField(controller: _email, decoration: const InputDecoration(labelText: 'メール')),
+              TextField(controller: _birthDate, decoration: const InputDecoration(labelText: '生年月日 (YYYY-MM-DD)')),
+              const SizedBox(height: 12),
+              const Divider(),
+              Align(alignment: Alignment.centerLeft, child: Text('手術情報（患者側は編集不可）', style: Theme.of(context).textTheme.titleSmall)),
+              TextField(controller: _surgeryDate, decoration: const InputDecoration(labelText: '手術日 (YYYY-MM-DD)')),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _surgeryApproach,
+                decoration: const InputDecoration(labelText: 'アプローチ'),
+                items: const [
+                  DropdownMenuItem(value: '未設定', child: Text('未設定')),
+                  DropdownMenuItem(value: '前方(DAA)', child: Text('前方(DAA)')),
+                  DropdownMenuItem(value: '側方', child: Text('側方')),
+                  DropdownMenuItem(value: '後方', child: Text('後方')),
+                  DropdownMenuItem(value: 'その他', child: Text('その他')),
+                ],
+                onChanged: (v) => setState(() => _surgeryApproach = v ?? '未設定'),
+              ),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(
+                value: _surgerySide,
+                decoration: const InputDecoration(labelText: '左右'),
+                items: const [
+                  DropdownMenuItem(value: '未設定', child: Text('未設定')),
+                  DropdownMenuItem(value: '右', child: Text('右')),
+                  DropdownMenuItem(value: '左', child: Text('左')),
+                  DropdownMenuItem(value: '両側', child: Text('両側')),
+                ],
+                onChanged: (v) => setState(() => _surgerySide = v ?? '未設定'),
+              ),
+              const SizedBox(height: 12),
+              DropdownButtonFormField<String>(
+                value: _role,
+                items: const [
+                  DropdownMenuItem(value: 'patient', child: Text('患者')),
+                  DropdownMenuItem(value: 'admin', child: Text('管理者')),
+                ],
+                onChanged: (v) => setState(() => _role = v ?? 'patient'),
+                decoration: const InputDecoration(labelText: 'ロール'),
+              ),
+            ],
+          ),
         ),
       ),
       actions: [
         TextButton(onPressed: _busy ? null : () => Navigator.pop(context), child: const Text('閉じる')),
         FilledButton(
           onPressed: _busy ? null : _save,
-          child: _busy ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const Text('保存'),
+          child: _busy ? const SizedBox(width:18,height:18,child:CircularProgressIndicator(strokeWidth:2)) : const Text('保存'),
         ),
       ],
     );
@@ -69,11 +107,13 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
       final data = {
         'name': _name.text,
         'email': _email.text,
+        'birthDate': _birthDate.text.isEmpty ? null : _birthDate.text,
         'role': _role,
         'surgeryDate': _surgeryDate.text.isEmpty ? null : _surgeryDate.text,
+        'surgeryApproach': _surgeryApproach,
+        'surgerySide': _surgerySide,
       };
       if (widget.userId == null) {
-        // 代理作成（認証ユーザは別途サインアップが必要）
         await col.add(data);
       } else {
         await col.doc(widget.userId!).set(data, SetOptions(merge: true));
