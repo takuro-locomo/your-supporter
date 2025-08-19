@@ -1,30 +1,11 @@
 // ==== Imports ====
 const admin = require('firebase-admin');
-const functions = require('firebase-functions'); // ← v1 を使う（auth trigger用）
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 
 // ==== Init ====
 admin.initializeApp();
 const ADMIN_INVITE_CODE = defineSecret('ADMIN_INVITE_CODE');
-
-// ==== Auth: ユーザー作成時に users/{uid} を用意（v1トリガー） ====
-exports.onAuthCreate = functions
-  .region('asia-northeast1')
-  .auth.user()
-  .onCreate(async (user) => {
-    await admin.firestore().collection('users').doc(user.uid).set(
-      {
-        uid: user.uid,
-        email: user.email || '',
-        name: user.displayName || '',
-        role: 'patient',
-        hospitalId: null,
-        createdAt: admin.firestore.FieldValue.serverTimestamp(),
-      },
-      { merge: true }
-    );
-  });
 
 // ==== 管理者昇格（招待コード） ====
 exports.elevateToAdmin = onCall(
@@ -50,6 +31,11 @@ exports.createHospital = onCall({ region: 'asia-northeast1' }, async (req) => {
   const claims = req.auth?.token;
   if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');
   if (!claims?.admin) throw new HttpsError('permission-denied', '管理者のみ実行できます。');
+
+  // 既に所属済みなら禁止
+  if (claims?.hid) {
+    throw new HttpsError('failed-precondition', '既に病院が設定されています。変更はできません。');
+  }
 
   const name = (req.data?.name || '').trim();
   const joinCode = (req.data?.joinCode || '').trim();
@@ -79,7 +65,13 @@ exports.createHospital = onCall({ region: 'asia-northeast1' }, async (req) => {
 // ==== 病院コードで参加（患者/管理者どちらでも可） ====
 exports.joinHospitalByCode = onCall({ region: 'asia-northeast1' }, async (req) => {
   const uid = req.auth?.uid;
+  const claims = req.auth?.token;
   if (!uid) throw new HttpsError('unauthenticated', 'ログインが必要です。');
+
+  // 既に所属済みなら禁止
+  if (claims?.hid) {
+    throw new HttpsError('failed-precondition', '既に病院が設定されています。変更はできません。');
+  }
 
   const code = (req.data?.code || '').trim();
   if (!code) throw new HttpsError('invalid-argument', 'code が必要です。');

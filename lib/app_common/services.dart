@@ -1,9 +1,14 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'models.dart';
 
 final _db = FirebaseFirestore.instance;
+
+/// 現在のユーザの custom claims から hospitalId を取得
+Future<String?> currentHid() async {
+  final r = await FirebaseAuth.instance.currentUser!.getIdTokenResult(true);
+  return r.claims?['hid'] as String?;
+}
 
 class UserService {
   static Future<void> ensureUserDoc(AppUser user) async {
@@ -20,11 +25,15 @@ class UserService {
     return AppUser.fromMap(doc.data()!);
   }
 
-  static Stream<QuerySnapshot<Map<String, dynamic>>> streamPatients() {
-    return _db.collection('users').where('role', isEqualTo: 'patient').snapshots();
+  /// ★ 院ごとの患者一覧（必ず hospitalId で絞り込む）
+  static Stream<QuerySnapshot<Map<String, dynamic>>> streamPatientsOf(String hospitalId) {
+    return _db.collection('users')
+        .where('role', isEqualTo: 'patient')
+        .where('hospitalId', isEqualTo: hospitalId)
+        .snapshots();
   }
 
-  // 患者自身のプロフィール更新（氏名・生年月日のみ）
+  /// 患者自身のプロフィール更新（氏名・生年月日のみ）
   static Future<void> updateMyProfile(String uid, {required String name, required String birthDate}) {
     return _db.collection('users').doc(uid).set({
       'name': name,
@@ -32,7 +41,7 @@ class UserService {
     }, SetOptions(merge: true));
   }
 
-  // 管理者が手術情報を更新
+  /// 管理者が手術情報を更新（患者側からは書けない）
   static Future<void> updateSurgeryByAdmin(String userId, {
     String? surgeryDate,
     String? surgeryApproach,
@@ -47,59 +56,60 @@ class UserService {
 }
 
 class ExerciseService {
-  static Stream<List<Exercise>> streamExercises() => _db.collection('exercises')
-      .snapshots().map((qs) => qs.docs.map((d) => Exercise.fromMap(d.id, d.data())).toList());
+  /// ★ 院ごとのエクササイズ一覧
+  static Stream<QuerySnapshot<Map<String, dynamic>>> streamExercisesOf(String hospitalId) =>
+      _db.collection('exercises')
+          .where('hospitalId', isEqualTo: hospitalId)
+          .snapshots();
 
-  static Future<void> addOrUpdateExercise({String? id, required String title, required String description, required String videoUrl}) async {
+  /// ★ 作成/更新は hospitalId を必ず付与
+  static Future<void> addOrUpdateExercise({
+    String? id,
+    required String title,
+    required String description,
+    required String videoUrl,
+    required String hospitalId,
+  }) async {
+    final data = {
+      'title': title,
+      'description': description,
+      'videoUrl': videoUrl,
+      'hospitalId': hospitalId,
+    };
     final col = _db.collection('exercises');
     if (id == null) {
-      await col.add({'title': title, 'description': description, 'videoUrl': videoUrl});
+      await col.add(data);
     } else {
-      await col.doc(id).set({'title': title, 'description': description, 'videoUrl': videoUrl}, SetOptions(merge: true));
+      await col.doc(id).set(data, SetOptions(merge: true));
     }
   }
 }
 
+class HospitalService {
+  /// 病院情報のストリーム
+  static Stream<DocumentSnapshot<Map<String, dynamic>>> stream(String hospitalId) {
+    return _db.collection('hospitals').doc(hospitalId).snapshots();
+  }
+}
+
 class ProgressService {
-  static Future<void> addProgress({required String userId, required String exerciseId, required int count}) {
+  static Future<void> addProgress({
+    required String userId,
+    required String exerciseId,
+    required int count,
+  }) {
     final col = _db.collection('users').doc(userId).collection('progress_records');
     return col.add({'exerciseId': exerciseId, 'count': count, 'ts': FieldValue.serverTimestamp()});
   }
 }
 
 class FeedbackService {
-  static Future<void> addWeeklyFeedback({required String userId, required int pain, required int satisfaction}) {
-    final col = _db.collection('users').doc(userId).collection('weekly_feedback');
+  static Future<void> addWeeklyFeedback({
+    required String userId,
+    required int pain,
+    required int satisfaction,
+  }) {
+    final col = _db.collection('users').doc(userId).collection('progress_records');
     return col.add({'pain': pain, 'satisfaction': satisfaction, 'ts': FieldValue.serverTimestamp()});
-  }
-}
-
-class AdminService {
-  static final _functions = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
-
-  /// 招待コードで管理者権限に昇格
-  static Future<bool> elevateToAdmin(String inviteCode) async {
-    try {
-      final result = await _functions.httpsCallable('elevateToAdmin').call({
-        'code': inviteCode,
-      });
-      
-      // トークンを更新してCustom Claimsを反映
-      await FirebaseAuth.instance.currentUser?.getIdToken(true);
-      
-      return result.data['ok'] == true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  /// ユーザー初期化（サインアップ後に呼び出し）
-  static Future<bool> createUserDoc() async {
-    try {
-      final result = await _functions.httpsCallable('createUserDoc').call();
-      return result.data['ok'] == true;
-    } catch (e) {
-      return false;
-    }
   }
 }

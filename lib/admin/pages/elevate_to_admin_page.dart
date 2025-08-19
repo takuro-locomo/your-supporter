@@ -45,14 +45,8 @@ class _ElevateToAdminPageState extends State<ElevateToAdminPage> {
 			final r = await FirebaseAuth.instance.currentUser!.getIdTokenResult(true);
 			debugPrint('claims: ${r.claims}'); // {admin: true} が見えればOK
 
-			// ★ 成功したらダッシュボードに置き換え遷移
-			if (mounted) {
-				Navigator.pushAndRemoveUntil(
-					context,
-					MaterialPageRoute(builder: (_) => const AdminDashboardPage()),
-					(_) => false,
-				);
-			}
+			// ★ 成功したら、AdminHomeRouterの自動判定に任せる
+			// Token更新により、AdminHomeRouterが自動で適切な画面に遷移する
 		} catch (e) {
 			if (mounted) {
 				setState(() => _error = '招待コードが無効です');
