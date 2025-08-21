@@ -1,9 +1,8 @@
-import 'dart:typed_data';
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:your_supporter/app_common/models.dart';
+// import 'package:your_supporter/app_common/models.dart';
 import 'package:your_supporter/app_common/services.dart';
 import '../utils/video_upload_utils.dart';
 
@@ -56,10 +55,17 @@ class ExerciseManagerPage extends StatelessWidget {
                     itemCount: docs.length,
                     itemBuilder: (_, i) {
                       final data = docs[i].data();
+                      final thumb = data['thumbnailUrl'] as String?;
                       return ListTile(
+                        leading: thumb == null
+                            ? const Icon(Icons.movie)
+                            : ClipRRect(
+                                borderRadius: BorderRadius.circular(4),
+                                child: Image.network(thumb, width: 56, height: 56, fit: BoxFit.cover),
+                              ),
                         title: Text(data['title'] ?? '(タイトル未設定)'),
                         subtitle: Text(data['description'] ?? ''),
-                        trailing: const Icon(Icons.movie),
+                        trailing: const Icon(Icons.chevron_right),
                       );
                     },
                   );

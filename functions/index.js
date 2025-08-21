@@ -1,11 +1,14 @@
 // ==== Imports ====
 const admin = require('firebase-admin');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+// Identity triggersは利用せず、クライアント側で users/{uid} 作成を行う
 const { defineSecret } = require('firebase-functions/params');
 
 // ==== Init ====
 admin.initializeApp();
 const ADMIN_INVITE_CODE = defineSecret('ADMIN_INVITE_CODE');
+
+// 初回サインアップ時の users/{uid} 作成はクライアントから行います（UserBootstrapServiceなど）
 
 // ==== 管理者昇格（招待コード） ====
 exports.elevateToAdmin = onCall(

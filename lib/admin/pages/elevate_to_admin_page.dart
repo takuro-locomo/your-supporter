@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart';
 import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'admin_dashboard_page.dart';
 
 class ElevateToAdminPage extends StatefulWidget {
 	const ElevateToAdminPage({super.key});

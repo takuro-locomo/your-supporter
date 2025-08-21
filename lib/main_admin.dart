@@ -69,14 +69,14 @@ class _AdminHomeRouterState extends State<AdminHomeRouter> {
         final isAdmin = token.claims?['admin'] == true;
         final hid = token.claims?['hid'] as String?;
         
-        // 🐛 デバッグ出力
-        print('=== AdminHomeRouter Debug ===');
-        print('User UID: ${u.uid}');
-        print('Claims: ${token.claims}');
-        print('isAdmin: $isAdmin (State: $_isAdmin)');
-        print('hid: $hid (State: $_hid)');
-        print('Will show: ${_getPageName(isAdmin, hid)}');
-        print('=============================');
+        // 🐛 デバッグ出力（本番は抑制）
+        // debugPrint('=== AdminHomeRouter Debug ===');
+        // debugPrint('User UID: ${u.uid}');
+        // debugPrint('Claims: ${token.claims}');
+        // debugPrint('isAdmin: $isAdmin (State: $_isAdmin)');
+        // debugPrint('hid: $hid (State: $_hid)');
+        // debugPrint('Will show: ${_getPageName(isAdmin, hid)}');
+        // debugPrint('=============================');
         
         if (mounted) {
           setState(() { 

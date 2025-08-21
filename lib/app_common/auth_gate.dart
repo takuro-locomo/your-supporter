@@ -1,5 +1,6 @@
 import 'package:firebase_ui_auth/firebase_ui_auth.dart';
 import 'package:firebase_auth/firebase_auth.dart' as fb;
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 class AuthGate extends StatelessWidget {
@@ -17,28 +18,23 @@ class AuthGate extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<fb.User?>(
-      // トークン（Custom Claims含む）が更新された時にも発火するストリーム
-      stream: fb.FirebaseAuth.instance.idTokenChanges(),
-      builder: (context, snapshot) {
-        final user = snapshot.data;
+      stream: fb.FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snap) {
+        final user = snap.data;
         if (user == null) {
           return SignInScreen(providers: [EmailAuthProvider()]);
         }
 
-        return FutureBuilder<fb.IdTokenResult>(
-          future: user.getIdTokenResult(),
-          builder: (context, tokenSnapshot) {
-            if (!tokenSnapshot.hasData) {
+        return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+          stream: FirebaseFirestore.instance.collection('users').doc(user.uid).snapshots(),
+          builder: (context, usnap) {
+            if (!usnap.hasData || !usnap.data!.exists) {
               return const Scaffold(body: Center(child: CircularProgressIndicator()));
             }
-
-            final claims = tokenSnapshot.data!.claims;
-            final isAdmin = claims?['admin'] == true;
-
-            if (adminOnly) {
-              return isAdmin ? adminBuilder() : const _NoPermission();
-            }
-            return isAdmin ? adminBuilder() : patientBuilder();
+            final role = usnap.data!.data()?['role'] as String?;
+            if (role == 'hospital') return adminBuilder();
+            if (role == 'patient') return patientBuilder();
+            return const _RoleNotAssigned();
           },
         );
       },
@@ -52,6 +48,16 @@ class _NoPermission extends StatelessWidget {
   Widget build(BuildContext context) {
     return const Scaffold(
       body: Center(child: Text('権限がありません（管理者のみ）')),
+    );
+  }
+}
+
+class _RoleNotAssigned extends StatelessWidget {
+  const _RoleNotAssigned({super.key});
+  @override
+  Widget build(BuildContext context) {
+    return const Scaffold(
+      body: Center(child: Text('ロールが未設定です。管理者にお問い合わせください。')),
     );
   }
 }

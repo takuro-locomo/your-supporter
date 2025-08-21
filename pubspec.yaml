@@ -45,6 +45,10 @@ dependencies:
   cloud_functions: ^6.0.0
   firebase_ui_localizations: ^2.0.0
   path: ^1.9.1
+  intl: ^0.20.2
+  flutter_localizations:
+    sdk: flutter
+  fl_chart: ^0.68.0
 
 dev_dependencies:
   flutter_test:

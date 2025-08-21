@@ -21,6 +21,7 @@ Future<void> saveExerciseWithUpload({
   final ref = FirebaseStorage.instance.ref('rehab_videos/$hid/$cleanFileName');
 
   String url;
+  String? thumbUrl;
   if (kIsWeb) {
     // Web: bytesを使用
     if (fileBytes == null) throw Exception('Webでは動画データが必要です');
@@ -34,11 +35,13 @@ Future<void> saveExerciseWithUpload({
     url = await ref.getDownloadURL();
   }
 
+  // 将来的にサムネイル生成をCloud Functions等に委譲する場合、ここで取得して保存する（今はnull許容）
   await ExerciseService.addOrUpdateExercise(
     id: id,
     title: title,
     description: description,
     videoUrl: url,
     hospitalId: hid,
+    thumbnailUrl: thumbUrl,
   );
 }

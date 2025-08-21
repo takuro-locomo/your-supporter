@@ -1,6 +1,8 @@
 import 'package:cloud_functions/cloud_functions.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import '../../app_common/ensure_user_doc.dart';
 
 class HospitalSetupPage extends StatefulWidget {
   const HospitalSetupPage({super.key});
@@ -47,13 +49,30 @@ class _HospitalSetupPageState extends State<HospitalSetupPage> {
   Future<void> _create() async {
     setState(() { _busy = true; _msg = null; });
     try {
+      // final nav = Navigator.of(context);
       final fns = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
-      await fns.httpsCallable('createHospital').call({
+      final res = await fns.httpsCallable('createHospital').call({
         'name': _name.text.trim(),
         'joinCode': _joinCode.text.trim(),
       });
       await FirebaseAuth.instance.currentUser?.getIdToken(true); // claims 更新
-      // AdminHomeRouterが自動でダッシュボードに遷移する
+      try {
+        final hid = (res.data is Map) ? (res.data['hospitalId'] as String?) : null;
+        if (hid != null) {
+          await UserBootstrapService().ensureUserDoc(role: 'hospital', hospitalId: hid);
+        } else {
+          final hs = await FirebaseFirestore.instance
+              .collection('hospitals')
+              .where('joinCode', isEqualTo: _joinCode.text.trim())
+              .limit(1)
+              .get();
+          if (hs.docs.isNotEmpty) {
+            await UserBootstrapService().ensureUserDoc(role: 'hospital', hospitalId: hs.docs.first.id);
+          }
+        }
+      } catch (_) {}
+      if (!mounted) return;
+      // AdminHomeRouterが自動でダッシュボードに遷移
     } on FirebaseFunctionsException catch (e) {
       if (mounted) setState(() => _msg = e.message);
     } finally {
@@ -64,10 +83,20 @@ class _HospitalSetupPageState extends State<HospitalSetupPage> {
   Future<void> _join() async {
     setState(() { _busy = true; _msg = null; });
     try {
+      // final nav = Navigator.of(context);
       final fns = FirebaseFunctions.instanceFor(region: 'asia-northeast1');
       await fns.httpsCallable('joinHospitalByCode').call({'code': _joinCode2.text.trim()});
       await FirebaseAuth.instance.currentUser?.getIdToken(true);
-      // AdminHomeRouterが自動でダッシュボードに遷移する
+      final hs = await FirebaseFirestore.instance
+          .collection('hospitals')
+          .where('joinCode', isEqualTo: _joinCode2.text.trim())
+          .limit(1)
+          .get();
+      if (hs.docs.isNotEmpty) {
+        await UserBootstrapService().ensureUserDoc(role: 'hospital', hospitalId: hs.docs.first.id);
+      }
+      if (!mounted) return;
+      // AdminHomeRouterが自動でダッシュボードに遷移
     } on FirebaseFunctionsException catch (e) {
       if (mounted) setState(() => _msg = e.message);
     } finally {

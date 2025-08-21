@@ -48,7 +48,11 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
           Row(
             children: [
               ElevatedButton(
-                onPressed: () => _controller.play(),
+                onPressed: () async {
+                  final uid = FirebaseAuth.instance.currentUser!.uid;
+                  await VideoStatsService.incrementPlay(userId: uid, exerciseId: ex.id);
+                  _controller.play();
+                },
                 child: const Text('再生'),
               ),
               const SizedBox(width: 8),
