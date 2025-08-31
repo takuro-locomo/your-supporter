@@ -1,0 +1,98 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
+    function userHid() { return isSignedIn() ? request.auth.token.hid : null; }
+    function userHcode() { return isSignedIn() ? request.auth.token.hcode : null; }
+    function sameHospital(uid) {
+      return (
+        userHid() == get(/databases/$(database)/documents/users/$(uid)).data.hospitalId ||
+        userHcode() == get(/databases/$(database)/documents/users/$(uid)).data.hospitalCode
+      );
+    }
+
+    // 病院情報（読み取りはサインイン済みで可。書き込みは同院の管理者のみ）
+    match /hospitals/{hid} {
+      allow read: if isSignedIn();
+      // 更新は同院管理者のみ。ただし joinCode は不変（作成後に変更不可）
+      allow create: if isAdmin();
+      allow update: if isAdmin() && userHid() == hid && (
+        // joinCode は変更不可
+        request.resource.data.joinCode == resource.data.joinCode
+      );
+      allow delete: if isAdmin() && userHid() == hid;
+    }
+
+    // エクササイズ: 同院のみ閲覧、管理者のみ同院に対して書き込み
+    match /exercises/{docId} {
+      allow read: if isSignedIn() && (
+        resource.data.hospitalId == userHid() ||
+        resource.data.hospitalId == get(/databases/$(database)/documents/users/$(request.auth.uid)).data.hospitalId
+      );
+      allow create: if isAdmin() && request.resource.data.hospitalId == userHid();
+      allow update, delete: if isAdmin() && resource.data.hospitalId == userHid();
+    }
+
+    // ユーザー: 自分のドキュメントの read/create/update を許可。管理者は同院のみ read/update。
+    match /users/{uid} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (isAdmin() && resource.data.hospitalId == userHid())
+      );
+
+      // 自分で作成: 役割は必ず patient、hospitalId は未設定（null/欠落）で作成のみ許可
+      allow create: if isSignedIn() && request.auth.uid == uid && (
+        (request.resource.data.role == 'patient') &&
+        !(request.resource.data.keys().hasAny(['hospitalId']) && request.resource.data.hospitalId != null)
+      );
+
+      // 自分による更新: role と hospitalId を変更不可（読み取り専用）
+      allow update: if isSignedIn() && request.auth.uid == uid && (
+        request.resource.data.role == resource.data.role &&
+        request.resource.data.hospitalId == resource.data.hospitalId
+      );
+
+      // 管理者による更新: 同院ユーザーに限定。hospitalId と role は変更不可（昇格/所属変更はCF経由のみ）
+      allow update: if isSignedIn() && isAdmin() && resource.data.hospitalId == userHid() && (
+        request.resource.data.hospitalId == resource.data.hospitalId &&
+        request.resource.data.role == resource.data.role
+      );
+    }
+
+    // 患者サブコレクション（自分の配下のみ許可）
+    match /users/{uid}/weekly_feedback/{docId} {
+      allow read: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (isAdmin() && userHid() == get(/databases/$(database)/documents/users/$(uid)).data.hospitalId)
+      );
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update, delete: if isSignedIn() && (
+        request.auth.uid == uid ||
+        (isAdmin() && userHid() == get(/databases/$(database)/documents/users/$(uid)).data.hospitalId)
+      );
+    }
+
+    match /users/{uid}/progress_records/{docId} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create: if isSignedIn() && request.auth.uid == uid;
+      allow update, delete: if false; // 更新/削除は扱わない
+    }
+
+    match /users/{uid}/video_stats/{docId} {
+      allow read: if isSignedIn() && request.auth.uid == uid;
+      allow create, update: if isSignedIn() && request.auth.uid == uid;
+      allow delete: if false;
+    }
+
+    match /users/{uid}/plans/{docId} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || (isAdmin() && sameHospital(uid)));
+      // 自分 or 同院管理者が作成/更新/削除可（hospitalId または hospitalCode が一致）
+      allow create, update, delete: if isSignedIn() && (
+        request.auth.uid == uid || (isAdmin() && sameHospital(uid))
+      );
+    }
+  }
+}
+
+

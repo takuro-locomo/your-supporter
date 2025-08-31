@@ -23,12 +23,12 @@ class _AdminDashboardPageState extends State<AdminDashboardPage> {
           future: currentHid(),
           builder: (context, snap) {
             final hid = snap.data;
-            if (hid == null) return const Text('your supporter（管理）');
+            if (hid == null) return const Text('your supporter');
             return StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
               stream: HospitalService.stream(hid),
               builder: (context, docSnap) {
                 final name = docSnap.data?.data()?['name'] ?? '';
-                return Text(name.isEmpty ? 'your supporter（管理）' : '$name（管理）');
+                return Text(name.isEmpty ? 'your supporter' : name);
               },
             );
           },

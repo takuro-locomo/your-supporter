@@ -1,6 +1,7 @@
 // ==== Imports ====
 const admin = require('firebase-admin');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onObjectFinalized } = require('firebase-functions/v2/storage');
 // Identity triggersは利用せず、クライアント側で users/{uid} 作成を行う
 const { defineSecret } = require('firebase-functions/params');
 
@@ -56,7 +57,13 @@ exports.createHospital = onCall({ region: 'asia-northeast1' }, async (req) => {
   });
   const hid = ref.id;
 
-  await db.collection('users').doc(uid).set({ hospitalId: hid }, { merge: true });
+  // 管理者ユーザーに hospitalId と病院名を反映（管理UIで表示するため name を病院名に）
+  await db.collection('users').doc(uid).set({
+    hospitalId: hid,
+    role: 'admin',
+    name: name,
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+  }, { merge: true });
 
   const user = await admin.auth().getUser(uid);
   const current = user.customClaims || {};
@@ -84,12 +91,69 @@ exports.joinHospitalByCode = onCall({ region: 'asia-northeast1' }, async (req) =
   if (snap.empty) throw new HttpsError('not-found', '該当する病院がありません。');
 
   const hid = snap.docs[0].id;
+  // 既存病院に参加。管理者であれば name を病院名に、role も 'admin' を維持
+  let hospitalName = '';
+  try {
+    const hdoc = await db.collection('hospitals').doc(hid).get();
+    hospitalName = hdoc.data()?.name || '';
+  } catch(_) {}
 
-  await db.collection('users').doc(uid).set({ hospitalId: hid }, { merge: true });
+  const setData = { hospitalId: hid, updatedAt: admin.firestore.FieldValue.serverTimestamp() };
+  if (claims?.admin) {
+    // すでに管理者のユーザーは表示名を病院名にそろえる
+    setData['role'] = 'admin';
+    if (hospitalName) setData['name'] = hospitalName;
+  }
+  await db.collection('users').doc(uid).set(setData, { merge: true });
 
   const user = await admin.auth().getUser(uid);
   const current = user.customClaims || {};
   await admin.auth().setCustomUserClaims(uid, { ...current, hid });
 
   return { ok: true, hospitalId: hid };
+});
+
+// ==== 動画メタ検証（最大2分、720pまで） ====
+exports.checkVideoMetaOnUpload = onObjectFinalized({ region: 'asia-northeast1' }, async (event) => {
+  const obj = event.data;
+  const name = obj.name || '';
+  if (!name.startsWith('rehab_videos/')) return;
+  if (!/\.(mp4|mov|qt)$/i.test(name)) return;
+
+  const db = admin.firestore();
+
+  // ここではStorageメタの custom metadata を信頼。将来ffprobe等に切替可能
+  const bucket = admin.storage().bucket(obj.bucket);
+  const file = bucket.file(name);
+  let durationSec = null; let height = null;
+  try {
+    const [md] = await file.getMetadata();
+    const m = md?.metadata || {};
+    if (m.durationSec) durationSec = Number(m.durationSec);
+    if (m.height) height = Number(m.height);
+  } catch (_) {}
+
+  const violations = [];
+  const isMov = /\.(mov|qt)$/i.test(name);
+  if (durationSec != null && durationSec > 120) violations.push('overDuration');
+  if (height != null && height > 720) violations.push('overResolution');
+  if (isMov) violations.push('movFormat');
+  if (violations.length === 0) return;
+
+  // ex-<exerciseId>-*.ext の慣例で exercises doc を推定
+  const base = name.split('/').pop() || '';
+  const m = base.match(/ex-([A-Za-z0-9_-]+)/);
+  if (!m) return;
+  const exerciseId = m[1];
+
+  await db.collection('exercises').doc(exerciseId).set({
+    warning: {
+      movFormat: violations.includes('movFormat'),
+      overDuration: violations.includes('overDuration'),
+      overResolution: violations.includes('overResolution'),
+      checkedAt: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    // 時間/解像度逸脱は公開ブロック
+    ...(violations.includes('overDuration') || violations.includes('overResolution') ? { blocked: true } : {})
+  }, { merge: true });
 });

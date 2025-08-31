@@ -39,10 +39,13 @@ class PatientFeedbackDialog extends StatelessWidget {
                       separatorBuilder: (_, __) => const Divider(height: 1),
                       itemBuilder: (_, i) {
                         final m = docs[i].data();
+                        final memo = (m['memo'] as String?) ?? '';
+                        final ts = (m['ts'] as Timestamp?)?.toDate();
+                        final when = ts == null ? '' : '${ts.year}/${ts.month}/${ts.day}';
                         return ListTile(
                           leading: const Icon(Icons.event_note),
-                          title: Text('記録'),
-                          subtitle: Text('術後 第${m['sinceOpWeek'] ?? '-'}週 / 痛み ${m['pain']}・満足度 ${m['satisfaction']}'),
+                          title: Text('術後 第${m['sinceOpWeek'] ?? '-'}週（$when）'),
+                          subtitle: Text('痛み ${m['pain']}・満足度 ${m['satisfaction']}${memo.isNotEmpty ? '・メモ: $memo' : ''}'),
                         );
                       },
                     );

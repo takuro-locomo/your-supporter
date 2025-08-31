@@ -6,10 +6,23 @@ import 'models.dart';
 
 final _db = FirebaseFirestore.instance;
 
-/// 現在のユーザの custom claims から hospitalId を取得
+/// 現在のユーザの hospitalId を取得
+/// 1) custom claims.hid を優先
+/// 2) 無ければ users/{uid}.hospitalId をフォールバック
 Future<String?> currentHid() async {
-  final r = await FirebaseAuth.instance.currentUser!.getIdTokenResult(true);
-  return r.claims?['hid'] as String?;
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return null;
+  try {
+    final r = await user.getIdTokenResult(true);
+    final hid = r.claims?['hid'] as String?;
+    if (hid != null && hid.isNotEmpty) return hid;
+  } catch (_) {}
+  try {
+    final doc = await _db.collection('users').doc(user.uid).get();
+    final h = doc.data()?['hospitalId'];
+    if (h is String && h.isNotEmpty) return h;
+  } catch (_) {}
+  return null;
 }
 
 class UserService {
@@ -146,6 +159,7 @@ class FeedbackService {
     required String userId,
     required int pain,
     required int satisfaction,
+    String? memo,
   }) async {
     DateTime? surgery;
     final userDoc = await _db.collection('users').doc(userId).get();
@@ -167,6 +181,7 @@ class FeedbackService {
     await col.add({
       'pain': pain,
       'satisfaction': satisfaction,
+      if (memo != null && memo.isNotEmpty) 'memo': memo,
       'sinceOpWeek': sinceOpWeek,
       'ts': FieldValue.serverTimestamp(),
     });

@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart';
 // import 'package:your_supporter/app_common/models.dart';
 import 'package:your_supporter/app_common/services.dart';
 import '../utils/video_upload_utils.dart';
@@ -56,6 +57,7 @@ class ExerciseManagerPage extends StatelessWidget {
                     itemBuilder: (_, i) {
                       final data = docs[i].data();
                       final thumb = data['thumbnailUrl'] as String?;
+                      final warn = (data['warning'] as Map?)?.cast<String, dynamic>();
                       return ListTile(
                         leading: thumb == null
                             ? const Icon(Icons.movie)
@@ -64,8 +66,60 @@ class ExerciseManagerPage extends StatelessWidget {
                                 child: Image.network(thumb, width: 56, height: 56, fit: BoxFit.cover),
                               ),
                         title: Text(data['title'] ?? '(タイトル未設定)'),
-                        subtitle: Text(data['description'] ?? ''),
-                        trailing: const Icon(Icons.chevron_right),
+                        subtitle: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          if ((data['description'] ?? '').toString().isNotEmpty) Text(data['description']),
+                          if (warn != null && (warn['overDuration'] == true || warn['overResolution'] == true))
+                            Row(children: const [
+                              Icon(Icons.warning_amber_rounded, color: Colors.orange, size: 16),
+                              SizedBox(width: 4),
+                              Text('動画規約に違反の可能性（2分/720p超）', style: TextStyle(color: Colors.orange)),
+                            ]),
+                          if (warn != null && (warn['movFormat'] == true))
+                            Row(children: const [
+                              Icon(Icons.info_outline, color: Colors.blue, size: 16),
+                              SizedBox(width: 4),
+                              Text('MOVはブラウザ再生に不向き。mp4(H.264/AAC)推奨', style: TextStyle(color: Colors.blue)),
+                            ]),
+                          if (data['blocked'] == true)
+                            Row(children: const [
+                              Icon(Icons.block, color: Colors.red, size: 16),
+                              SizedBox(width: 4),
+                              Text('公開不可（規約違反）', style: TextStyle(color: Colors.red)),
+                            ]),
+                        ]),
+                        trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                          IconButton(
+                            tooltip: '削除',
+                            icon: const Icon(Icons.delete_outline),
+                            onPressed: () async {
+                              final ok = await showDialog<bool>(
+                                context: context,
+                                builder: (_) => AlertDialog(
+                                  title: const Text('削除確認'),
+                                  content: const Text('この動画メニューを削除しますか？'),
+                                  actions: [
+                                    TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('キャンセル')),
+                                    FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('削除')),
+                                  ],
+                                ),
+                              );
+                              if (ok != true) return;
+                              // Firestore 削除
+                              await FirebaseFirestore.instance.collection('exercises').doc(docs[i].id).delete();
+                              // Storageも削除（可能なら）
+                              final url = data['videoUrl'] as String?;
+                              if (url != null && url.startsWith('https://storage.googleapis.com/')) {
+                                try {
+                                  await FirebaseStorage.instance.refFromURL(url).delete();
+                                } catch (_) {}
+                              }
+                              if (context.mounted) {
+                                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('削除しました')));
+                              }
+                            },
+                          ),
+                          const Icon(Icons.chevron_right),
+                        ]),
                       );
                     },
                   );
@@ -106,14 +160,24 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
             TextField(controller: _title, decoration: const InputDecoration(labelText: 'タイトル')),
             TextField(controller: _desc, decoration: const InputDecoration(labelText: '説明')),
             const SizedBox(height: 8),
-            Row(
-              children: [
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : _pickVideo,
-                  icon: const Icon(Icons.upload),
-                  label: Text(_fileName ?? '動画ファイルを選択 (mp4等)'),
-                ),
-              ],
+            Row(children: [
+              OutlinedButton.icon(
+                onPressed: _busy ? null : _pickVideo,
+                icon: const Icon(Icons.upload),
+                label: Text(_fileName ?? '動画ファイルを選択 (mp4のみ)'),
+              ),
+            ]),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(8), border: Border.all(color: Colors.amber.shade200)),
+              child: const Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text('アップロードの注意', style: TextStyle(fontWeight: FontWeight.bold)),
+                SizedBox(height: 4),
+                Text('・再生の安定性のため mp4(H.264/AAC) のみ対応です。'),
+                Text('・iPhoneで撮影した動画は mp4 への変換をお願いします。'),
+                Text('・動画は最大2分・解像度は720pまでにしてください。'),
+              ]),
             ),
           ],
         ),
@@ -145,6 +209,15 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
 
   Future<void> _save() async {
     if (_title.text.isEmpty || _fileName == null) return;
+    // クライアント側チェック: 拡張子・動画長・解像度（簡易）
+    final lower = _fileName!.toLowerCase();
+    if (!(lower.endsWith('.mp4') || lower.endsWith('.mov') || lower.endsWith('.qt'))) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('対応形式は mp4 / mov のみです（mp4推奨）')));
+      }
+      return;
+    }
+    // 長さ・解像度の厳密検証はアップロード後の運用で（ここでは事前注意のみ）
     setState(() => _busy = true);
     try {
       await saveExerciseWithUpload(
@@ -154,6 +227,9 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
         fileBytes: _bytes,
         filePath: _filePath,
       );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('アップロードしました。動画は最大2分・720pまででお願いします。')));
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) {

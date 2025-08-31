@@ -4,6 +4,7 @@ import 'package:your_supporter/app_common/services.dart';
 Future<void> showWeeklyFeedbackSheet(BuildContext context, String uid) async {
   double pain = 3;
   double satisfaction = 7;
+  final memoCtrl = TextEditingController();
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
@@ -31,6 +32,15 @@ Future<void> showWeeklyFeedbackSheet(BuildContext context, String uid) async {
               _sliderTile('痛み（0-10）', pain, (v) => setState(() => pain = v)),
               const SizedBox(height: 12),
               _sliderTile('満足度（0-10）', satisfaction, (v) => setState(() => satisfaction = v)),
+              const SizedBox(height: 12),
+              TextField(
+                controller: memoCtrl,
+                maxLines: 3,
+                decoration: const InputDecoration(
+                  labelText: '一言メモ（任意）',
+                  border: OutlineInputBorder(),
+                ),
+              ),
               const SizedBox(height: 16),
               SizedBox(
                 width: double.infinity,
@@ -40,6 +50,7 @@ Future<void> showWeeklyFeedbackSheet(BuildContext context, String uid) async {
                       userId: uid,
                       pain: pain.round(),
                       satisfaction: satisfaction.round(),
+                      memo: memoCtrl.text.trim(),
                     );
                     if (ctx.mounted) Navigator.pop(ctx);
                   },

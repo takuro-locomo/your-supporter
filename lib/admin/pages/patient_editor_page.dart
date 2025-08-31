@@ -20,6 +20,11 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
   String _surgerySide = '未設定';
   String _role = 'patient';
   bool _busy = false;
+  // KPI設定
+  bool? _kpiShowThisWeek;
+  bool? _kpiShowLastWeek;
+  bool? _kpiShow30Days;
+  double? _kpiTargetRate; // 0.0 .. 1.0
 
   @override
   void initState() {
@@ -32,6 +37,12 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
     _surgeryApproach = (m['surgeryApproach'] ?? '未設定');
     _surgerySide = (m['surgerySide'] ?? '未設定');
     _role = m['role'] ?? 'patient';
+    final kpi = (m['kpi'] as Map?)?.cast<String, dynamic>() ?? {};
+    _kpiShowThisWeek = kpi['showThisWeekRate'] as bool?;
+    _kpiShowLastWeek = kpi['showLastWeekRate'] as bool?;
+    _kpiShow30Days = kpi['show30DayRate'] as bool?;
+    final tgt = kpi['targetRate'];
+    if (tgt is num) _kpiTargetRate = tgt.toDouble();
   }
 
   @override
@@ -50,7 +61,23 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
               const SizedBox(height: 12),
               const Divider(),
               Align(alignment: Alignment.centerLeft, child: Text('手術情報（患者側は編集不可）', style: Theme.of(context).textTheme.titleSmall)),
-              TextField(controller: _surgeryDate, decoration: const InputDecoration(labelText: '手術日 (YYYY-MM-DD)')),
+              TextField(
+                controller: _surgeryDate,
+                readOnly: true,
+                decoration: const InputDecoration(labelText: '手術日 (YYYY-MM-DD)'),
+                onTap: () async {
+                  final now = DateTime.now();
+                  final picked = await showDatePicker(
+                    context: context,
+                    initialDate: now,
+                    firstDate: DateTime(now.year - 5),
+                    lastDate: DateTime(now.year + 1),
+                  );
+                  if (picked != null) {
+                    setState(() => _surgeryDate.text = '${picked.year.toString().padLeft(4,'0')}-${picked.month.toString().padLeft(2,'0')}-${picked.day.toString().padLeft(2,'0')}');
+                  }
+                },
+              ),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(
                 value: _surgeryApproach,
@@ -86,6 +113,38 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
                 onChanged: (v) => setState(() => _role = v ?? 'patient'),
                 decoration: const InputDecoration(labelText: 'ロール'),
               ),
+              const SizedBox(height: 12),
+              const Divider(),
+              Align(alignment: Alignment.centerLeft, child: Text('達成率の表示/目標（患者ごと）', style: TextStyle(fontWeight: FontWeight.bold))),
+              const SizedBox(height: 8),
+              SwitchListTile(
+                title: const Text('今週達成率を表示'),
+                value: _kpiShowThisWeek ?? true,
+                onChanged: (v) => setState(() => _kpiShowThisWeek = v),
+              ),
+              SwitchListTile(
+                title: const Text('先週達成率を表示'),
+                value: _kpiShowLastWeek ?? true,
+                onChanged: (v) => setState(() => _kpiShowLastWeek = v),
+              ),
+              SwitchListTile(
+                title: const Text('直近30日達成率を表示'),
+                value: _kpiShow30Days ?? true,
+                onChanged: (v) => setState(() => _kpiShow30Days = v),
+              ),
+              const SizedBox(height: 8),
+              Row(children: [
+                Expanded(child: Slider(
+                  min: 0.5, max: 1.0, divisions: 5,
+                  value: (_kpiTargetRate ?? 0.8).clamp(0.5, 1.0),
+                  label: '${(((_kpiTargetRate ?? 0.8)*100).round())} %',
+                  onChanged: (v) => setState(() => _kpiTargetRate = v),
+                )),
+                SizedBox(
+                  width: 64,
+                  child: Text('${(((_kpiTargetRate ?? 0.8)*100).round())}%', textAlign: TextAlign.right),
+                ),
+              ]),
             ],
           ),
         ),
@@ -117,6 +176,15 @@ class _PatientEditorPageState extends State<PatientEditorPage> {
         await col.add(data);
       } else {
         await col.doc(widget.userId!).set(data, SetOptions(merge: true));
+        // KPI設定の保存
+        await col.doc(widget.userId!).set({
+          'kpi': {
+            if (_kpiShowThisWeek != null) 'showThisWeekRate': _kpiShowThisWeek,
+            if (_kpiShowLastWeek != null) 'showLastWeekRate': _kpiShowLastWeek,
+            if (_kpiShow30Days != null) 'show30DayRate': _kpiShow30Days,
+            if (_kpiTargetRate != null) 'targetRate': _kpiTargetRate,
+          }
+        }, SetOptions(merge: true));
       }
       if (mounted) Navigator.pop(context);
     } finally {

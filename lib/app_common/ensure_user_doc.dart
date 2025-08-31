@@ -6,19 +6,26 @@ class UserBootstrapService {
   final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  /// users/{uid} に role と hospitalId を保存（未作成なら作成）
+  /// users/{uid} に role / hospitalId / email / name を保存（未作成なら作成）
   Future<void> ensureUserDoc({
-    required String role, // 'patient' | 'hospital'
+    required String role, // 'patient' | 'admin'（旧'hospital'は'admin'に正規化）
     required String hospitalId,
     Map<String, dynamic>? extra,
   }) async {
     final uid = _auth.currentUser!.uid;
+    final email = _auth.currentUser!.email ?? '';
+    final displayName = _auth.currentUser!.displayName ?? '';
     final ref = _db.collection('users').doc(uid);
     final snap = await ref.get();
+    // 旧 'hospital' を 'admin' に正規化
+    final roleNormalized = (role == 'hospital') ? 'admin' : role;
 
     final data = <String, dynamic>{
-      'role': role,
+      'role': roleNormalized,
       'hospitalId': hospitalId,
+      'email': email,
+      'name': displayName,
+      'uid': uid,
       'updatedAt': FieldValue.serverTimestamp(),
       if (extra != null) ...extra,
     };
@@ -26,7 +33,6 @@ class UserBootstrapService {
     if (!snap.exists) {
       await ref.set({
         ...data,
-        'uid': uid,
         'createdAt': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
     } else {

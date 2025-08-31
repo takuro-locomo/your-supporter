@@ -8,6 +8,7 @@ import 'weekly_feedback_sheet.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'profile_setup_page.dart';
 import 'hospital_join_page.dart';
+import 'exercise_detail_page.dart';
 
 class PatientHomePage extends StatefulWidget {
   const PatientHomePage({super.key});
@@ -167,22 +168,38 @@ class _KPISectionState extends State<_KPISection> {
   }
   @override
   Widget build(BuildContext context) {
-    return Column(children: [
-      Row(children: [
-        _chip('連続日数', (_streak ?? '-').toString(), Icons.local_fire_department_outlined),
-        _chip('今週の達成日数', (_achieved ?? '-').toString(), Icons.calendar_today_outlined),
-      ]),
-      const SizedBox(height: 8),
-      Row(children: [
-        _chip('今週達成率', _fmtRate(_rateThisWeek), Icons.task_alt_outlined),
-        _chip('先週達成率', _fmtRate(_rateLastWeek), Icons.history_toggle_off),
-      ]),
-      const SizedBox(height: 8),
-      Row(children: [
-        _chip('直近30日達成率', _fmtRate(_rate30), Icons.calendar_view_month),
-        const Expanded(child: SizedBox()),
-      ]),
-    ]);
+    return FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+      future: FirebaseFirestore.instance.collection('users').doc(widget.uid).get(),
+      builder: (_, snap) {
+        final m = snap.data?.data() ?? const <String, dynamic>{};
+        final kpi = (m['kpi'] as Map?)?.cast<String, dynamic>() ?? {};
+        final showThis = (kpi['showThisWeekRate'] as bool?) ?? true;
+        final showLast = (kpi['showLastWeekRate'] as bool?) ?? true;
+        final show30 = (kpi['show30DayRate'] as bool?) ?? true;
+        final targetRate = ((kpi['targetRate'] as num?)?.toDouble() ?? 0.8).clamp(0.0, 1.0);
+
+        return Column(children: [
+          Row(children: [
+            _chip('連続日数', (_streak ?? '-').toString(), Icons.local_fire_department_outlined),
+            _chip('今週の達成日数', (_achieved ?? '-').toString(), Icons.calendar_today_outlined),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            if (showThis) _chip('今週達成率', _fmtRate(_rateThisWeek), Icons.task_alt_outlined),
+            if (showLast) _chip('先週達成率', _fmtRate(_rateLastWeek), Icons.history_toggle_off),
+          ]),
+          const SizedBox(height: 8),
+          Row(children: [
+            if (show30) _chip('直近30日達成率', _fmtRate(_rate30), Icons.calendar_view_month),
+            const Expanded(child: SizedBox()),
+          ]),
+          const SizedBox(height: 8),
+          LinearProgressIndicator(value: ((_rateThisWeek ?? 0.0) / (targetRate == 0 ? 1.0 : targetRate)).clamp(0.0, 1.0), minHeight: 6),
+          const SizedBox(height: 4),
+          Text('目標達成率 ${(_rateThisWeek ?? 0.0 * 100).round()}% / 目標 ${(targetRate * 100).round()}%'),
+        ]);
+      },
+    );
   }
 
   Widget _chip(String label, String value, IconData icon) {
@@ -226,8 +243,13 @@ class _TodayMenu extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall),
               ]),
               const SizedBox(height: 8),
-              if (todayPlans.isEmpty) const Text('今日のメニューはありません。')
-              else ...todayPlans.map((pl) => _PlanRow(uid: uid, plan: pl)),
+              if (todayPlans.isEmpty) ...[
+                const Text('今日のメニューはありません。'),
+                const SizedBox(height: 8),
+                Text('全プラン', style: Theme.of(context).textTheme.bodySmall),
+                const SizedBox(height: 4),
+                ...plans.map((pl) => _PlanRow(uid: uid, plan: pl)),
+              ] else ...todayPlans.map((pl) => _PlanRow(uid: uid, plan: pl)),
             ]),
           ),
         );
@@ -253,23 +275,37 @@ class _PlanRow extends StatelessWidget {
       builder: (_, eSnap) {
         final e = eSnap.data;
         final title = e?.title ?? 'エクササイズ';
+        final dows = _dowLabel(plan.daysOfWeek);
+        final isToday = PlanService.runsToday(plan);
         return ListTile(
           leading: const Icon(Icons.checklist),
           title: Text(title),
-          subtitle: Text('目標 ${plan.targetCount} 回'),
-          trailing: FilledButton(
-            onPressed: () async {
-              await ProgressService.addProgress(userId: uid, exerciseId: plan.exerciseId, count: plan.targetCount);
-              if (context.mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$title を ${plan.targetCount} 回 記録しました')));
-              }
-            },
-            child: const Text('完了'),
-          ),
+          subtitle: Text('目標 ${plan.targetCount} 回 ・ 曜日 $dows'),
+          trailing: isToday
+              ? FilledButton(
+                  onPressed: () async {
+                    await ProgressService.addProgress(userId: uid, exerciseId: plan.exerciseId, count: plan.targetCount);
+                    if (context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('$title を ${plan.targetCount} 回 記録しました')));
+                    }
+                  },
+                  child: const Text('完了'),
+                )
+              : const SizedBox.shrink(),
+          onTap: () {
+            if (e != null) {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => ExerciseDetailPage(exercise: e)));
+            }
+          },
         );
       },
     );
   }
+}
+
+String _dowLabel(List<int> dows) {
+  const jp = {1:'月',2:'火',3:'水',4:'木',5:'金',6:'土',7:'日'};
+  return dows.map((d) => jp[d]).join('・');
 }
 
 class _FeedbackSection extends StatelessWidget {
@@ -363,7 +399,7 @@ class _WeeklyProgressState extends State<_WeeklyProgress> {
             Row(children: [
               Text('今週のがんばり', style: Theme.of(context).textTheme.titleMedium),
               const Spacer(),
-              Text('達成日数 ${_dailyCounts.where((c)=>c>0).length}/7  ・ 合計実施 $_total回'),
+              Text('達成日数 ${_dailyCounts.where((c)=>c>0).length}/7  ・ 合計実施 $_totalセット'),
             ]),
             const SizedBox(height: 8),
             SizedBox(
