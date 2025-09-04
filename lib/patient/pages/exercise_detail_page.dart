@@ -39,10 +39,16 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
         padding: const EdgeInsets.all(16),
         children: [
           if (_controller.value.isInitialized)
-            AspectRatio(
-              aspectRatio: _controller.value.aspectRatio,
-              child: VideoPlayer(_controller),
-            )
+            LayoutBuilder(builder: (context, cons) {
+              final maxW = cons.maxWidth;
+              final maxH = MediaQuery.of(context).size.height * 0.35; // スマホでの初期表示高さ
+              final aspect = _controller.value.aspectRatio == 0 ? (16 / 9) : _controller.value.aspectRatio;
+              double w = maxW, h = w / aspect;
+              if (h > maxH) { h = maxH; w = h * aspect; }
+              return Center(
+                child: SizedBox(width: w, height: h, child: VideoPlayer(_controller)),
+              );
+            })
           else const SizedBox(height: 200, child: Center(child: CircularProgressIndicator())),
           const SizedBox(height: 12),
           Row(

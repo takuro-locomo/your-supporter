@@ -2,6 +2,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:video_player/video_player.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 // import 'package:your_supporter/app_common/models.dart';
 import 'package:your_supporter/app_common/services.dart';
@@ -89,6 +90,16 @@ class ExerciseManagerPage extends StatelessWidget {
                         ]),
                         trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                           IconButton(
+                            tooltip: 'プレビュー/編集',
+                            icon: const Icon(Icons.play_circle_outline),
+                            onPressed: () {
+                              showDialog(context: context, builder: (_) => _PreviewEditDialog(
+                                id: docs[i].id,
+                                initial: data,
+                              ));
+                            },
+                          ),
+                          IconButton(
                             tooltip: '削除',
                             icon: const Icon(Icons.delete_outline),
                             onPressed: () async {
@@ -133,6 +144,146 @@ class ExerciseManagerPage extends StatelessWidget {
   }
 }
 
+class _PreviewEditDialog extends StatefulWidget {
+  final String id; final Map<String, dynamic> initial;
+  const _PreviewEditDialog({required this.id, required this.initial});
+  @override State<_PreviewEditDialog> createState() => _PreviewEditDialogState();
+}
+
+class _PreviewEditDialogState extends State<_PreviewEditDialog> {
+  late final TextEditingController _title;
+  late final TextEditingController _desc;
+
+  @override
+  void initState() {
+    super.initState();
+    _title = TextEditingController(text: widget.initial['title'] ?? '');
+    _desc = TextEditingController(text: widget.initial['description'] ?? '');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final url = widget.initial['videoUrl'] as String?;
+    final size = MediaQuery.of(context).size;
+    final maxW = size.width * 0.9;
+    final maxH = size.height * 0.85;
+    return AlertDialog(
+      title: const Text('プレビュー / 編集'),
+      content: ConstrainedBox(
+        constraints: BoxConstraints(
+          maxWidth: maxW.clamp(360.0, 860.0),
+          maxHeight: maxH.clamp(420.0, 980.0),
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: _title, decoration: const InputDecoration(labelText: 'タイトル')),
+            TextField(controller: _desc, decoration: const InputDecoration(labelText: '説明')),
+            const SizedBox(height: 8),
+            if (url != null)
+              Container(
+                constraints: BoxConstraints(
+                  // ダイアログ内でプレイヤーがはみ出さないよう最大サイズを指定
+                  maxHeight: maxH * 0.6,
+                  maxWidth: maxW * 0.9,
+                ),
+                alignment: Alignment.center,
+                child: _VideoPreviewPlayer(url: url),
+              ),
+          ],
+        ),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context), child: const Text('閉じる')),
+        FilledButton(
+          onPressed: () async {
+            await FirebaseFirestore.instance.collection('exercises').doc(widget.id).set({
+              'title': _title.text,
+              'description': _desc.text,
+              'updatedAt': FieldValue.serverTimestamp(),
+            }, SetOptions(merge: true));
+            if (context.mounted) Navigator.pop(context);
+          },
+          child: const Text('保存'),
+        ),
+      ],
+    );
+  }
+}
+
+class _VideoPreviewPlayer extends StatefulWidget {
+  final String url; const _VideoPreviewPlayer({required this.url});
+  @override
+  State<_VideoPreviewPlayer> createState() => _VideoPreviewPlayerState();
+}
+
+class _VideoPreviewPlayerState extends State<_VideoPreviewPlayer> {
+  late final VideoPlayerController _controller =
+      VideoPlayerController.networkUrl(Uri.parse(widget.url));
+  bool _inited = false;
+  bool _muted = true;
+
+  @override
+  void initState() {
+    super.initState();
+    () async {
+      try {
+        await _controller.setLooping(true);
+        await _controller.setVolume(0.0); // Webの自動再生対策
+        await _controller.initialize();
+        await _controller.play();
+        if (mounted) setState(() => _inited = true);
+      } catch (_) {}
+    }();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final aspect = _inited
+        ? (_controller.value.aspectRatio == 0 ? 16 / 9 : _controller.value.aspectRatio)
+        : 16 / 9;
+    return AspectRatio(
+      aspectRatio: aspect,
+      child: Stack(
+        alignment: Alignment.center,
+        children: [
+          if (_inited) VideoPlayer(_controller) else const Center(child: CircularProgressIndicator()),
+          Positioned(
+            bottom: 8,
+            left: 8,
+            child: Row(children: [
+              IconButton(
+                tooltip: _controller.value.isPlaying ? '一時停止' : '再生',
+                icon: Icon(_controller.value.isPlaying ? Icons.pause_circle_filled : Icons.play_circle_fill, size: 32),
+                onPressed: !_inited ? null : () {
+                  setState(() {
+                    _controller.value.isPlaying ? _controller.pause() : _controller.play();
+                  });
+                },
+              ),
+              IconButton(
+                tooltip: _muted ? 'ミュート解除' : 'ミュート',
+                icon: Icon(_muted ? Icons.volume_off : Icons.volume_up),
+                onPressed: !_inited ? null : () async {
+                  final next = !_muted;
+                  await _controller.setVolume(next ? 1.0 : 0.0);
+                  setState(() => _muted = !next);
+                },
+              ),
+            ]),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 class _AddExerciseDialog extends StatefulWidget {
   const _AddExerciseDialog();
 
@@ -161,10 +312,12 @@ class _AddExerciseDialogState extends State<_AddExerciseDialog> {
             TextField(controller: _desc, decoration: const InputDecoration(labelText: '説明')),
             const SizedBox(height: 8),
             Row(children: [
-              OutlinedButton.icon(
-                onPressed: _busy ? null : _pickVideo,
-                icon: const Icon(Icons.upload),
-                label: Text(_fileName ?? '動画ファイルを選択 (mp4のみ)'),
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : _pickVideo,
+                  icon: const Icon(Icons.upload),
+                  label: Text(_fileName ?? '動画ファイルを選択 (mp4のみ)'),
+                ),
               ),
             ]),
             const SizedBox(height: 8),

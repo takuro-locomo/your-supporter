@@ -1,0 +1,27 @@
+rules_version = '2';
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() { return request.auth != null; }
+    function isAdmin() { return isSignedIn() && request.auth.token.admin == true; }
+    function userHid() { return isSignedIn() ? request.auth.token.hid : null; }
+
+    // 原本アップロード（サーバー変換前）
+    match /uploads_raw/{hid}/{allPaths=**} {
+      allow write, delete: if isAdmin() && userHid() == hid;
+      allow read: if isAdmin() && userHid() == hid; // 管理者のみ
+    }
+
+    // 変換後の公開用動画
+    match /rehab_videos/{hid}/{allPaths=**} {
+      allow write, delete: if isAdmin() && userHid() == hid;
+      allow read: if isSignedIn(); // 必要なら same hospital に絞る
+    }
+
+    // その他は拒否
+    match /{path=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+
