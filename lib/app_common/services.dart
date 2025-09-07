@@ -29,12 +29,30 @@ class UserService {
   static Future<void> ensureUserDoc(AppUser user) async {
     final doc = _db.collection('users').doc(user.uid);
     final snap = await doc.get();
+    final effectiveRole = (user.role.isEmpty ? 'patient' : user.role);
+    final emailLower = (user.email.isEmpty ? '' : user.email.toLowerCase());
+
+    // 1) ロールインデックス（初回のみ確保）。既に存在する場合は変更しない
+    if (emailLower.isNotEmpty) {
+      final idxRef = _db.collection('role_index').doc(emailLower);
+      final idx = await idxRef.get();
+      if (!idx.exists) {
+        await idxRef.set({
+          'allowed': effectiveRole,
+          'createdBy': user.uid,
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: false));
+      }
+    }
+
+    // 2) ユーザドキュメント
     if (!snap.exists) {
       await doc.set({
         'uid': user.uid,
         'email': user.email,
+        'emailLower': emailLower,
         'name': user.name.isEmpty ? '' : user.name,
-        'role': (user.role.isEmpty ? 'patient' : user.role),
+        'role': effectiveRole,
         'birthDate': user.birthDate,
         'hospitalId': user.hospitalId,
         'surgeryDate': user.surgeryDate,

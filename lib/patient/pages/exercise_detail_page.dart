@@ -15,12 +15,15 @@ class ExerciseDetailPage extends StatefulWidget {
 class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
   late VideoPlayerController _controller;
   final _countCtrl = TextEditingController(text: '10');
+  double _volume = 1.0;
+  bool _muted = false;
 
   @override
   void initState() {
     super.initState();
     _controller = VideoPlayerController.networkUrl(Uri.parse(widget.exercise.videoUrl))
       ..initialize().then((_) => setState(() {}));
+    _controller.setVolume(_volume);
   }
 
   @override
@@ -65,6 +68,37 @@ class _ExerciseDetailPageState extends State<ExerciseDetailPage> {
               ElevatedButton(
                 onPressed: () => _controller.pause(),
                 child: const Text('一時停止'),
+              ),
+              const SizedBox(width: 12),
+              IconButton(
+                tooltip: _muted ? 'ミュート解除' : 'ミュート',
+                icon: Icon(_muted ? Icons.volume_off : Icons.volume_up),
+                onPressed: () {
+                  setState(() {
+                    _muted = !_muted;
+                    _controller.setVolume(_muted ? 0.0 : _volume);
+                  });
+                },
+              ),
+              Expanded(
+                child: Row(children: [
+                  const Icon(Icons.volume_mute, size: 16),
+                  Expanded(
+                    child: Slider(
+                      value: _muted ? 0.0 : _volume,
+                      min: 0.0,
+                      max: 1.0,
+                      onChanged: (v) {
+                        setState(() {
+                          _volume = v;
+                          _muted = v == 0.0;
+                          _controller.setVolume(v);
+                        });
+                      },
+                    ),
+                  ),
+                  const Icon(Icons.volume_up, size: 16),
+                ]),
               ),
             ],
           ),

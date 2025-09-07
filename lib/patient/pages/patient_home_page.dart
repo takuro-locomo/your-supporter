@@ -22,13 +22,16 @@ class _PatientHomePageState extends State<PatientHomePage> {
   @override
   void initState() {
     super.initState();
-    () async {
-      await _ensureUserDoc();
-      await _ensureProfile();
+    // 初期表示後に実行し、画面遷移は await しない（ローディングで詰まらないように）
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      try { await _ensureUserDoc(); } catch (_) {}
       if (!mounted) return;
-      await _ensureMembership();
+      // 画面遷移は投げっぱなしで実行（awaitしない）
+      try { _ensureProfile(); } catch (_) {}
+      if (!mounted) return;
+      try { _ensureMembership(); } catch (_) {}
       if (mounted) setState(() => _checking = false);
-    }();
+    });
   }
 
   Future<void> _ensureUserDoc() async {
@@ -194,9 +197,29 @@ class _KPISectionState extends State<_KPISection> {
             const Expanded(child: SizedBox()),
           ]),
           const SizedBox(height: 8),
-          LinearProgressIndicator(value: ((_rateThisWeek ?? 0.0) / (targetRate == 0 ? 1.0 : targetRate)).clamp(0.0, 1.0), minHeight: 6),
-          const SizedBox(height: 4),
-          Text('目標達成率 ${(_rateThisWeek ?? 0.0 * 100).round()}% / 目標 ${(targetRate * 100).round()}%'),
+          // 視覚的ゲージ: 目標線を描く
+          Stack(children: [
+            Container(
+              height: 10,
+              decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(6)),
+            ),
+            LayoutBuilder(builder: (ctx, c) {
+              final cur = ((_rateThisWeek ?? 0.0).clamp(0.0, 1.0)) * c.maxWidth;
+              final tgt = (targetRate.clamp(0.0, 1.0)) * c.maxWidth;
+              return SizedBox(
+                height: 10,
+                child: Stack(children: [
+                  Positioned(left: 0, right: c.maxWidth - cur, child: Container(height: 10, decoration: BoxDecoration(color: Colors.green, borderRadius: BorderRadius.circular(6)))),
+                  Positioned(left: tgt - 1, top: 0, bottom: 0, child: Container(width: 2, color: Colors.red)),
+                ]),
+              );
+            }),
+          ]),
+          const SizedBox(height: 6),
+          Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+            Text('現在 ${_fmtRate(_rateThisWeek)}'),
+            Text('目標 ${(targetRate * 100).round()}%'),
+          ]),
         ]);
       },
     );
@@ -243,13 +266,17 @@ class _TodayMenu extends StatelessWidget {
                     style: Theme.of(context).textTheme.bodySmall),
               ]),
               const SizedBox(height: 8),
-              if (todayPlans.isEmpty) ...[
-                const Text('今日のメニューはありません。'),
+              // 今日該当がなくても全プランを表示（今日は「完了」ボタンを非表示）
+              if (plans.isEmpty) ...[
+                const Text('メニューが未設定です。'),
+              ] else ...[
+                if (todayPlans.isEmpty) const Text('今日のメニューはありません。'),
+                if (todayPlans.isNotEmpty) ...todayPlans.map((pl) => _PlanRow(uid: uid, plan: pl, forceReadonlyComplete: false)),
                 const SizedBox(height: 8),
                 Text('全プラン', style: Theme.of(context).textTheme.bodySmall),
                 const SizedBox(height: 4),
-                ...plans.map((pl) => _PlanRow(uid: uid, plan: pl)),
-              ] else ...todayPlans.map((pl) => _PlanRow(uid: uid, plan: pl)),
+                ...plans.map((pl) => _PlanRow(uid: uid, plan: pl, forceReadonlyComplete: !todayPlans.contains(pl))),
+              ],
             ]),
           ),
         );
@@ -259,8 +286,8 @@ class _TodayMenu extends StatelessWidget {
 }
 
 class _PlanRow extends StatelessWidget {
-  final String uid; final ExercisePlan plan;
-  const _PlanRow({required this.uid, required this.plan});
+  final String uid; final ExercisePlan plan; final bool forceReadonlyComplete;
+  const _PlanRow({required this.uid, required this.plan, this.forceReadonlyComplete = false});
 
   Future<Exercise?> _fetchExercise(String id) async {
     final doc = await FirebaseFirestore.instance.collection('exercises').doc(id).get();
@@ -276,7 +303,7 @@ class _PlanRow extends StatelessWidget {
         final e = eSnap.data;
         final title = e?.title ?? 'エクササイズ';
         final dows = _dowLabel(plan.daysOfWeek);
-        final isToday = PlanService.runsToday(plan);
+        final isToday = !forceReadonlyComplete && PlanService.runsToday(plan);
         return ListTile(
           leading: const Icon(Icons.checklist),
           title: Text(title),

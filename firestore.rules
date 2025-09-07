@@ -58,6 +58,23 @@ service cloud.firestore {
         request.resource.data.hospitalId == resource.data.hospitalId &&
         request.resource.data.role == resource.data.role
       );
+
+      // ロール整合性: 書き込み時に、同メールで異ロールが存在しないこと
+      allow write: if request.method in ['create','update']
+        && (
+          // 変更後のemail/role を取得
+          let newEmail = (request.resource.data.email is string) ? request.resource.data.email : resource.data.email;
+          let newRole = (request.resource.data.role is string) ? request.resource.data.role : resource.data.role;
+          newEmail != null && newEmail != '' && newRole != null && newRole != '' &&
+          // 同メールの他ユーザで異ロールが存在しない
+          get(/databases/$(database)/documents/role_index/$(newEmail)).data.allowed in [null, newRole]
+        );
+    }
+
+    // ロールインデックス（簡易）：role_index/{email}.allowed = 固定ロール
+    match /role_index/{email} {
+      allow read: if false; // 読み出し不要
+      allow write: if isAdmin();
     }
 
     // 患者サブコレクション（自分の配下のみ許可）

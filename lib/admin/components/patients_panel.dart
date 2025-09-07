@@ -168,16 +168,19 @@ class _StatsDialogState extends State<_StatsDialog> {
             ListTile(
               leading: const Icon(Icons.task_alt_outlined),
               title: const Text('今週達成率'),
+              subtitle: _progressBar(_rateThisWeek ?? 0.0),
               trailing: Text(_fmtRate(_rateThisWeek)),
             ),
             ListTile(
               leading: const Icon(Icons.history_toggle_off),
               title: const Text('先週達成率'),
+              subtitle: _progressBar(_rateLastWeek ?? 0.0),
               trailing: Text(_fmtRate(_rateLastWeek)),
             ),
             ListTile(
               leading: const Icon(Icons.calendar_view_month),
               title: const Text('直近30日達成率'),
+              subtitle: _progressBar(_rate30 ?? 0.0),
               trailing: Text(_fmtRate(_rate30)),
             ),
             const SizedBox(height: 8),
@@ -190,4 +193,12 @@ class _StatsDialogState extends State<_StatsDialog> {
       ],
     );
   }
+}
+
+Widget _progressBar(double value) {
+  final v = value.clamp(0.0, 1.0);
+  return Padding(
+    padding: const EdgeInsets.only(top: 4.0),
+    child: LinearProgressIndicator(value: v, minHeight: 6),
+  );
 }
